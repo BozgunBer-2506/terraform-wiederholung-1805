@@ -1,3 +1,13 @@
+terraform {
+  required_version = ">= 1.0"
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
 provider "aws" {
   region = var.region
 }
@@ -32,6 +42,7 @@ resource "aws_instance" "meine_instanz" {
   ami                    = "ami-051eaec1417c5d4ae"
   instance_type          = var.aws_instance_type
   vpc_security_group_ids = [aws_security_group.web_sg.id]
+  key_name               = "CI-CD-Key"
 
   tags = {
     Name     = "terraform-wiederholung-${count.index + 1}"

@@ -1,0 +1,51 @@
+name: Terraform Apply
+
+on: push
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Setup AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-central-1
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve -var="instance_count=1"
+
+      - name: SSH Setup
+        run: |
+          ip=$(terraform output -json public_ips | jq -r '.[0]')
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/meinPrivateKey
+          chmod 400 ~/.ssh/meinPrivateKey
+          until ssh -i ~/.ssh/meinPrivateKey -o StrictHostKeyChecking=no -o ConnectTimeout=5 ubuntu@$ip true 2>/dev/null; do
+            sleep 5
+          done
+          ssh-keyscan -H $ip >> ~/.ssh/known_hosts
+
+      - name: Deploy Website
+        run: |
+          ip=$(terraform output -json public_ips | jq -r '.[0]')
+          ssh -i ~/.ssh/meinPrivateKey ubuntu@$ip 'sudo apt update && sudo apt install -y nginx'
+          scp -i ~/.ssh/meinPrivateKey index.html ubuntu@$ip:/home/ubuntu/index.html
+          ssh -i ~/.ssh/meinPrivateKey ubuntu@$ip "sudo mv /home/ubuntu/index.html /var/www/html/index.html"
+
+      - name: Slack Notification
+        run: |
+          ip=$(terraform output -json public_ips | jq -r '.[0]')
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\"✅ Terraform Apply erfolgreich, EC2 läuft, Website deployed. Praxisaufgabe 1905\n👤 Gestartet von: ${{ github.actor }}\n⚙️ Workflow: ${{ github.workflow }}\n🌐 URL: http://$ip\"}" \
+            ${{ secrets.SLACK_WEBHOOK_URL }}
